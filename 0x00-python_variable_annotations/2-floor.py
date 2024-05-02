@@ -1,8 +1,21 @@
 #!/usr/bin/env python3
-""" Module documentation """
+
+'''
+Type-annotated function floor that takes a float n as argument and returns the
+floor of the float.
+'''
+
 import math
 
 
 def floor(n: float) -> int:
-    """Func doc"""
+    '''
+    Returns the floor of a float
+
+    Parameters:
+        n : float
+
+    Returns:
+        int: floor of n
+    '''
     return math.floor(n)
