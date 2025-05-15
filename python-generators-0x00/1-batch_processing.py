@@ -1,3 +1,5 @@
+from seed import connect_to_prodev
+
 def stream_users_in_batches(batch_size):
     connection = connect_to_prodev()
     cursor = connection.cursor(dictionary=True)
@@ -13,3 +15,9 @@ def stream_users_in_batches(batch_size):
     finally:
         cursor.close()
         connection.close()
+
+
+def batch_processing(batch_size):
+    for user in stream_users_in_batches(batch_size):
+        if user['age'] > 25:
+            yield user
