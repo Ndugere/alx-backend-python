@@ -16,6 +16,17 @@ def connect_db():
         print(f"Error: {err}!")
         return None
 
+
+# Function to create the database
+def create_database(connection):
+    try:
+        cursor = connection.cursor()
+        cursor.execute("CREATE DATABASE IF NOT EXISTS ALX_prodev")
+        cursor.close()
+    except mysql.connector.Error as err:
+        print(f"Error Creating a database: {err}")
+
+
 # Function to connect specifically to the ALX_prodev database
 def connect_to_prodev():
     try:
@@ -31,14 +42,7 @@ def connect_to_prodev():
         print(f"Error: {err}")
         return None
 
-# Function to create the database
-def create_database(connection):
-    try:
-        cursor = connection.cursor()
-        cursor.execute("CREATE DATABASE IF NOT EXISTS ALX_prodev")
-        cursor.close()
-    except mysql.connector.Error as err:
-        print(f"Error Creating a database: {err}")
+
 
 # Function to create the table
 def create_table(connection):
