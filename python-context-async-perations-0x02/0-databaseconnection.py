@@ -1,29 +1,35 @@
 import sqlite3
-from contextlib import contextmanager
 
-@contextmanager
-def database_connection(db_name):
-    conn = sqlite3.connect(db_name)
-    try:
-        yield conn
-    finally:
-        conn.close()
+class DatabaseConnection:
+    def __init__(self, db_name):
+        self.db_name = db_name
+        self.connection = None
 
-# Setup sample database and insert test data
-def setup():
-    with database_connection("example.db") as conn:
-        c = conn.cursor()
-        c.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)")
-        c.execute("INSERT INTO users (name) VALUES ('Alice'), ('Bob'), ('Charlie')")
+    def __enter__(self):
+        self.connection = sqlite3.connect(self.db_name)
+        return self.connection
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.connection:
+            self.connection.close()
+
+# Optional: Setup test data
+def setup_database():
+    with DatabaseConnection("example.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, name TEXT)")
+        cursor.execute("INSERT INTO users (name) VALUES ('Alice'), ('Bob'), ('Charlie')")
         conn.commit()
 
-# Run query
-def query():
-    with database_connection("example.db") as conn:
-        c = conn.cursor()
-        c.execute("SELECT * FROM users")
-        for row in c.fetchall():
+# Required: Perform query and print results
+def query_users():
+    with DatabaseConnection("example.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users")
+        results = cursor.fetchall()
+        for row in results:
             print(row)
 
-setup()
-query()
+# Run the full workflow
+setup_database()
+query_users()
