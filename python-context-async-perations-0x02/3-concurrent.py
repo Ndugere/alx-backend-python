@@ -7,25 +7,29 @@ async def async_fetch_users():
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT * FROM users") as cursor:
             rows = await cursor.fetchall()
-            print("All users:")
-            for row in rows:
-                print(row)
+            return rows  # ✅ Return the full result set
 
 async def async_fetch_older_users():
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT * FROM users WHERE age > 40") as cursor:
             rows = await cursor.fetchall()
-            print("Users older than 40:")
-            for row in rows:
-                print(row)
+            return rows  # ✅ Return the full result set
 
 async def fetch_concurrently():
-    await asyncio.gather(
+    all_users, older_users = await asyncio.gather(
         async_fetch_users(),
         async_fetch_older_users()
     )
 
-# Optional: Setup example DB (run once to populate)
+    print("All users:")
+    for user in all_users:
+        print(user)
+
+    print("\nUsers older than 40:")
+    for user in older_users:
+        print(user)
+
+# Optional: Setup database with data
 async def setup_database():
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("DROP TABLE IF EXISTS users")
@@ -39,7 +43,7 @@ async def setup_database():
         ])
         await db.commit()
 
-# Run setup and fetch concurrently
+# Run the full flow
 async def main():
     await setup_database()
     await fetch_concurrently()
