@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     #my own apps
-    'chats'
+    'chats',
     # install third party software
     'rest_framework',
 ]
