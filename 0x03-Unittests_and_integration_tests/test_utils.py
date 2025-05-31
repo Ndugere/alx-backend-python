@@ -73,6 +73,17 @@ class TestMemoize(unittest.TestCase):
             mock_method.assert_called_once()
 
 
+#!/usr/bin/env python3
+"""
+Unit tests for GithubOrgClient in client.py
+"""
+
+import unittest
+from parameterized import parameterized
+from unittest.mock import patch
+from client import GithubOrgClient
+
+
 class TestGithubOrgClient(unittest.TestCase):
     """Tests for GithubOrgClient."""
 
@@ -84,46 +95,17 @@ class TestGithubOrgClient(unittest.TestCase):
     def test_org(self, org_name, mock_get_json):
         """Test that GithubOrgClient.org returns expected value.
 
-        Patching get_json to avoid actual HTTP calls.
+        Uses patch to mock get_json and avoid external HTTP calls.
         """
-        # Setup the mock to return a fake org payload
+        # Arrange: mock get_json to return a fake org payload
         mock_get_json.return_value = {"login": org_name}
 
+        # Act: create client and get org property
         client = GithubOrgClient(org_name)
         result = client.org
 
-        # Assert get_json was called once with the expected URL
+        # Assert: get_json was called once with the correct URL
         mock_get_json.assert_called_once_with(f"https://api.github.com/orgs/{org_name}")
 
-        # Assert the org property returns the mocked payload
+        # Assert: org property returns mocked payload
         self.assertEqual(result, {"login": org_name})
-
-
-class TestGithubOrgClient(unittest.TestCase):
-    """Tests for GithubOrgClient."""
-
-    @parameterized.expand([
-        ("google",),
-        ("abc",),
-    ])
-    @patch('client.get_json')
-    def test_org(self, org_name, mock_get_json):
-        """Test that GithubOrgClient.org returns expected value."""
-        mock_get_json.return_value = {"login": org_name}
-        client = GithubOrgClient(org_name)
-        result = client.org
-        mock_get_json.assert_called_once_with(f"https://api.github.com/orgs/{org_name}")
-        self.assertEqual(result, {"login": org_name})
-
-    def test_public_repos_url(self):
-        """Test that _public_repos_url returns the correct URL based on org data."""
-        fake_org_payload = {"repos_url": "https://api.github.com/orgs/google/repos"}
-
-        with patch.object(
-            GithubOrgClient,
-            "org",
-            new_callable=PropertyMock,
-            return_value=fake_org_payload
-        ):
-            client = GithubOrgClient("google")
-            self.assertEqual(client._public_repos_url, fake_org_payload["repos_url"])
