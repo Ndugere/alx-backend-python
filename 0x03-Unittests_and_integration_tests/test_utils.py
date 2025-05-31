@@ -56,11 +56,10 @@ class TestGetJson(unittest.TestCase):
 #!/usr/bin/env python3
 import unittest
 from unittest.mock import patch
-from utils import memoize
+from utils import memoize  # Make sure memoize is imported from your utils.py
 
 class TestMemoize(unittest.TestCase):
-    @patch('utils.TestClass.a_method')
-    def test_memoize(self, mock_a_method):
+    def test_memoize(self):
         class TestClass:
             def a_method(self):
                 return 42
@@ -69,11 +68,13 @@ class TestMemoize(unittest.TestCase):
             def a_property(self):
                 return self.a_method()
 
-        test_obj = TestClass()
-        mock_a_method.return_value = 42
-        self.assertEqual(test_obj.a_property, 42)
-        self.assertEqual(test_obj.a_property, 42)
-        mock_a_method.assert_called_once()
+        with patch.object(TestClass, 'a_method', return_value=42) as mock_method:
+            test_obj = TestClass()
+            self.assertEqual(test_obj.a_property, 42)
+            self.assertEqual(test_obj.a_property, 42)
+            mock_method.assert_called_once()
+
+
 
 #!/usr/bin/env python3
 import unittest
