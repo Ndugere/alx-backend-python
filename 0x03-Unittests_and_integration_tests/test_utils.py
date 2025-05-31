@@ -73,7 +73,7 @@ class TestMemoize(unittest.TestCase):
 
 
 class TestGithubOrgClient(unittest.TestCase):
-    """Test cases for GithubOrgClient."""
+    """Tests for GithubOrgClient."""
 
     @parameterized.expand([
         ("google",),
@@ -81,18 +81,18 @@ class TestGithubOrgClient(unittest.TestCase):
     ])
     @patch('client.get_json')
     def test_org(self, org_name, mock_get_json):
-        """Test that GithubOrgClient.org returns the correct value.
+        """Test that GithubOrgClient.org returns expected value.
 
-        The get_json function should be patched and not actually called.
+        Patching get_json to avoid actual HTTP calls.
         """
-        # Setup mock to not actually execute get_json but to record calls
+        # Setup the mock to return a fake org payload
         mock_get_json.return_value = {"login": org_name}
 
         client = GithubOrgClient(org_name)
         result = client.org
 
-        # Assert get_json was called once with the correct URL
+        # Assert get_json was called once with the expected URL
         mock_get_json.assert_called_once_with(f"https://api.github.com/orgs/{org_name}")
 
-        # Assert that the org property returns the mocked value
+        # Assert the org property returns the mocked payload
         self.assertEqual(result, {"login": org_name})
