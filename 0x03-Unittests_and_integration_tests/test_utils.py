@@ -56,7 +56,7 @@ class TestGetJson(unittest.TestCase):
 #!/usr/bin/env python3
 import unittest
 from unittest.mock import patch
-from utils import memoize  # Make sure memoize is imported from your utils.py
+from utils import memoize
 
 class TestMemoize(unittest.TestCase):
     def test_memoize(self):
@@ -73,23 +73,3 @@ class TestMemoize(unittest.TestCase):
             self.assertEqual(test_obj.a_property, 42)
             self.assertEqual(test_obj.a_property, 42)
             mock_method.assert_called_once()
-
-
-
-#!/usr/bin/env python3
-import unittest
-from unittest.mock import patch
-from parameterized import parameterized
-from client import GithubOrgClient  # Adjust the import path if necessary
-
-class TestGithubOrgClient(unittest.TestCase):
-    @parameterized.expand([
-        ("google",),
-        ("abc",),
-    ])
-    @patch('client.GithubOrgClient.get_json')
-    def test_org(self, org, mock_get_json):
-        mock_get_json.return_value = {'org': org}
-        client = GithubOrgClient(org)
-        self.assertEqual(client.org, {'org': org})
-        mock_get_json.assert_called_once()
