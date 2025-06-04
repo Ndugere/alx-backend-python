@@ -1,50 +1,62 @@
-from rest_framework import viewsets, permissions, filters, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
-from django.utils import timezone
-from datetime import timedelta
+from rest_framework.exceptions import ValidationError
+from .models import Conversation, Message
+from .serializers import ConversationSerializer, MessageSerializer
+from .permissions import IsConversationParticipant, IsMessageSender
 
-from .models import Conversation, Message, Status
-from .serializers import ConversationSerializer, MessageSerializer, StatusSerializer
 
-# ViewSet for Conversations
 class ConversationViewSet(viewsets.ModelViewSet):
-    queryset = Conversation.objects.all()
+    """
+    ViewSet for listing, retrieving, creating, updating, and deleting conversations.
+    """
     serializer_class = ConversationSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter]
-    search_fields = ['name']
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return self.queryset.filter(participants=self.request.user)
+        return Conversation.objects.filter(participants=self.request.user).order_by('-created_at')
 
     def perform_create(self, serializer):
-        conversation = serializer.save()
-        conversation.participants.add(self.request.user)
+        serializer.save(created_by=self.request.user)
 
-# ViewSet for Messages
+    def destroy(self, request, *args, **kwargs):
+        conversation = self.get_object()
+        if conversation.created_by != request.user:
+            return Response(
+                {'detail': 'You are not authorized to delete this conversation!'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        conversation.delete()
+        return Response({'detail': 'Conversation deleted successfully.'}, status=status.HTTP_204_NO_CONTENT)
+
+
 class MessageViewSet(viewsets.ModelViewSet):
-    queryset = Message.objects.all()
+    """
+    ViewSet for listing, retrieving, creating, updating, and deleting messages.
+    """
     serializer_class = MessageSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsConversationParticipant]
 
     def get_queryset(self):
-        conversation_id = self.request.query_params.get('conversation')
-        if conversation_id:
-            return self.queryset.filter(conversation__id=conversation_id, conversation__participants=self.request.user)
-        return self.queryset.none()
+        conversation_id = self.kwargs.get('conversation_pk')  # Assuming nested routing
+        return Message.objects.filter(
+            conversation__conversation_id=conversation_id,
+            conversation__participants=self.request.user
+        ).order_by('sent_at')
 
     def perform_create(self, serializer):
-        serializer.save(sender=self.request.user)
+        conversation_id = self.kwargs.get('conversation_pk')
+        try:
+            conversation = Conversation.objects.get(
+                conversation_id=conversation_id,
+                participants=self.request.user
+            )
+        except Conversation.DoesNotExist:
+            raise ValidationError("You are not a participant in this conversation.")
+        serializer.save(sender=self.request.user, conversation=conversation)
 
-# ViewSet for Statuses
-class StatusViewSet(viewsets.ModelViewSet):
-    queryset = Status.objects.all()
-    serializer_class = StatusSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return self.queryset.filter(created_at__gte=timezone.now() - timedelta(hours=24))
-
-    def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+    def get_permissions(self):
+        # Dynamically assign permissions for message sender actions
+        if self.action in ['update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated(), IsConversationParticipant(), IsMessageSender()]
+        return [permissions.IsAuthenticated(), IsConversationParticipant()]
