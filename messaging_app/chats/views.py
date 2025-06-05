@@ -4,6 +4,10 @@ from rest_framework.exceptions import ValidationError
 from .models import Conversation, Message
 from .serializers import ConversationSerializer, MessageSerializer
 from .permissions import IsParticipantOfConversation
+from django_filters.rest_framework import DjangoFilterBackend
+from .filters import MessageFilter
+from .pagination import MessagePagination
+
 
 
 class ConversationViewSet(viewsets.ModelViewSet):
@@ -11,8 +15,11 @@ class ConversationViewSet(viewsets.ModelViewSet):
     ViewSet for listing, retrieving, creating, updating, and deleting conversations.
     Only authenticated participants can access their conversations.
     """
-    serializer_class = ConversationSerializer
+    serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated, IsParticipantOfConversation]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = MessageFilter
+    pagination_class = MessagePagination
 
     def get_queryset(self):
         return Conversation.objects.filter(participants=self.request.user).order_by('-created_at')
