@@ -19,6 +19,8 @@ from .permissions import (
     UserProfilePermission,
     CanAccessOwnData
 )
+from .filters import MessageFilter, ConversationFilter, UserFilter
+from .pagination import MessagePagination, ConversationPagination, UserPagination
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -30,6 +32,11 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated, UserProfilePermission]
     lookup_field = 'user_id'
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_class = UserFilter
+    search_fields = ['first_name', 'last_name', 'email', 'username']
+    ordering_fields = ['first_name', 'last_name', 'email', 'created_at']
+    pagination_class = UserPagination
 
     def get_queryset(self):
         """
@@ -96,9 +103,10 @@ class ConversationViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsParticipantOfConversation]
     lookup_field = 'conversation_id'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['created_at', 'updated_at']
-    search_fields = ['participants__first_name', 'participants__last_name']
+    filterset_class = ConversationFilter
+    search_fields = ['participants__first_name', 'participants__last_name', 'participants__email']
     ordering_fields = ['created_at', 'updated_at']
+    pagination_class = ConversationPagination
 
     def get_queryset(self):
         """
@@ -226,13 +234,15 @@ class MessageViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing messages.
     Users can only access messages from conversations they participate in.
+    Implements pagination (20 messages per page) and filtering.
     """
     permission_classes = [IsAuthenticated, IsParticipantOfConversation, IsMessageSender]
     lookup_field = 'message_id'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['sent_at', 'conversation']
-    search_fields = ['message_body', 'sender__first_name']
-    ordering_fields = ['sent_at']
+    filterset_class = MessageFilter
+    search_fields = ['message_body', 'sender__first_name', 'sender__last_name', 'sender__email']
+    ordering_fields = ['sent_at', 'sender__first_name']
+    pagination_class = MessagePagination
 
     def get_queryset(self):
         """

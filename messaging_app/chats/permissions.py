@@ -7,11 +7,13 @@ class IsParticipantOfConversation(permissions.BasePermission):
     Custom permission class to allow only participants in a conversation 
     to send, view, update and delete messages.
     Only authenticated users can access the API.
+    Supports filtering and pagination.
     """
 
     def has_permission(self, request, view):
         """
         Check if user is authenticated.
+        Allow filtering and pagination for authenticated users.
         """
         return request.user and request.user.is_authenticated
 
@@ -28,6 +30,17 @@ class IsParticipantOfConversation(permissions.BasePermission):
             return obj.conversation.participants.filter(user_id=request.user.user_id).exists()
         
         return False
+
+    def filter_queryset(self, request, queryset, view):
+        """
+        Filter queryset to only include objects the user has permission to access.
+        This method is called during list operations with filtering.
+        """
+        if hasattr(view, 'get_queryset'):
+            # Let the view handle its own queryset filtering
+            return view.get_queryset()
+        
+        return queryset
 
 
 class IsOwnerOrReadOnly(permissions.BasePermission):
