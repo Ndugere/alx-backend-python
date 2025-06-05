@@ -2,6 +2,34 @@ from rest_framework import permissions
 from .models import Conversation, Message
 
 
+class IsParticipantOfConversation(permissions.BasePermission):
+    """
+    Custom permission class to allow only participants in a conversation 
+    to send, view, update and delete messages.
+    Only authenticated users can access the API.
+    """
+
+    def has_permission(self, request, view):
+        """
+        Check if user is authenticated.
+        """
+        return request.user and request.user.is_authenticated
+
+    def has_object_permission(self, request, view, obj):
+        """
+        Check if user is a participant in the conversation.
+        """
+        if isinstance(obj, Conversation):
+            # For conversation objects, check if user is a participant
+            return obj.participants.filter(user_id=request.user.user_id).exists()
+        
+        elif isinstance(obj, Message):
+            # For message objects, check if user is a participant in the conversation
+            return obj.conversation.participants.filter(user_id=request.user.user_id).exists()
+        
+        return False
+
+
 class IsOwnerOrReadOnly(permissions.BasePermission):
     """
     Custom permission to only allow owners of an object to edit it.
@@ -17,33 +45,34 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
         return obj.sender == request.user
 
 
-class IsParticipantInConversation(permissions.BasePermission):
-    """
-    Custom permission to only allow participants in a conversation to access it.
-    """
-
-    def has_permission(self, request, view):
-        # Allow authenticated users to create conversations
-        return request.user and request.user.is_authenticated
-
-    def has_object_permission(self, request, view, obj):
-        # Check if user is a participant in the conversation
-        if isinstance(obj, Conversation):
-            return obj.participants.filter(user_id=request.user.user_id).exists()
-        elif isinstance(obj, Message):
-            return obj.conversation.participants.filter(user_id=request.user.user_id).exists()
-        return False
-
-
 class IsMessageSender(permissions.BasePermission):
     """
     Custom permission to only allow message senders to modify their messages.
     """
 
+    def has_permission(self, request, view):
+        """
+        Check if user is authenticated.
+        """
+        return request.user and request.user.is_authenticated
+
     def has_object_permission(self, request, view, obj):
-        # Only allow the sender to modify their message
+        """
+        Only allow the sender to modify their message.
+        Must also be participant in the conversation.
+        """
         if isinstance(obj, Message):
-            return obj.sender == request.user
+            # User must be the sender AND a participant in the conversation
+            is_sender = obj.sender == request.user
+            is_participant = obj.conversation.participants.filter(user_id=request.user.user_id).exists()
+            
+            # For safe methods (GET, HEAD, OPTIONS), just check participation
+            if request.method in permissions.SAFE_METHODS:
+                return is_participant
+            
+            # For write methods, user must be both sender and participant
+            return is_sender and is_participant
+        
         return False
 
 

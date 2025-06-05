@@ -14,8 +14,8 @@ from .serializers import (
     MessageCreateSerializer
 )
 from .permissions import (
-    ConversationParticipantPermission,
-    MessageOwnerPermission,
+    IsParticipantOfConversation,
+    IsMessageSender,
     UserProfilePermission,
     CanAccessOwnData
 )
@@ -93,7 +93,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     ViewSet for managing conversations.
     Users can only access conversations they participate in.
     """
-    permission_classes = [IsAuthenticated, ConversationParticipantPermission]
+    permission_classes = [IsAuthenticated, IsParticipantOfConversation]
     lookup_field = 'conversation_id'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['created_at', 'updated_at']
@@ -227,7 +227,7 @@ class MessageViewSet(viewsets.ModelViewSet):
     ViewSet for managing messages.
     Users can only access messages from conversations they participate in.
     """
-    permission_classes = [IsAuthenticated, MessageOwnerPermission]
+    permission_classes = [IsAuthenticated, IsParticipantOfConversation, IsMessageSender]
     lookup_field = 'message_id'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['sent_at', 'conversation']
