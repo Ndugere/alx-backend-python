@@ -13,41 +13,87 @@ from .serializers import (
     MessageSerializer,
     MessageCreateSerializer
 )
+from .permissions import (
+    ConversationParticipantPermission,
+    MessageOwnerPermission,
+    UserProfilePermission,
+    CanAccessOwnData
+)
 
 
 class UserViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing users.
-    Provides CRUD operations for user management.
+    Provides CRUD operations for user management with proper permissions.
     """
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, UserProfilePermission]
     lookup_field = 'user_id'
 
     def get_queryset(self):
         """
-        Optionally filter users by email or name.
+        Users can only see their own profile unless they are superusers.
         """
-        queryset = User.objects.all()
+        if self.request.user.is_superuser:
+            queryset = User.objects.all()
+        else:
+            # Regular users can only see their own profile
+            queryset = User.objects.filter(user_id=self.request.user.user_id)
+        
+        # Optional filtering
         email = self.request.query_params.get('email')
         name = self.request.query_params.get('name')
         
-        if email:
+        if email and self.request.user.is_superuser:
             queryset = queryset.filter(email__icontains=email)
-        if name:
+        if name and self.request.user.is_superuser:
             queryset = queryset.filter(
                 Q(first_name__icontains=name) | Q(last_name__icontains=name)
             )
         return queryset
 
+    def create(self, request, *args, **kwargs):
+        """
+        Prevent user creation through this endpoint.
+        Users should register through the auth endpoints.
+        """
+        return Response(
+            {'error': 'User creation not allowed through this endpoint. Use /api/auth/register/'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED
+        )
+
+    def update(self, request, *args, **kwargs):
+        """
+        Allow users to update only their own profile.
+        """
+        instance = self.get_object()
+        if instance.user_id != request.user.user_id and not request.user.is_superuser:
+            return Response(
+                {'error': 'You can only update your own profile'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Allow users to delete only their own profile.
+        """
+        instance = self.get_object()
+        if instance.user_id != request.user.user_id and not request.user.is_superuser:
+            return Response(
+                {'error': 'You can only delete your own profile'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().destroy(request, *args, **kwargs)
+
 
 class ConversationViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing conversations.
-    Provides endpoints for listing, creating, and managing conversations.
+    Users can only access conversations they participate in.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, ConversationParticipantPermission]
     lookup_field = 'conversation_id'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['created_at', 'updated_at']
@@ -56,7 +102,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Return conversations where the current user is a participant.
+        Return only conversations where the current user is a participant.
         """
         return Conversation.objects.filter(
             participants=self.request.user
@@ -93,6 +139,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def add_participant(self, request, conversation_id=None):
         """
         Add a participant to an existing conversation.
+        Only existing participants can add new participants.
         """
         conversation = self.get_object()
         user_id = request.data.get('user_id')
@@ -105,6 +152,12 @@ class ConversationViewSet(viewsets.ModelViewSet):
         
         try:
             user = User.objects.get(user_id=user_id)
+            if conversation.participants.filter(user_id=user_id).exists():
+                return Response(
+                    {'error': 'User is already a participant'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
             conversation.participants.add(user)
             return Response(
                 {'message': f'User {user.first_name} added to conversation'}, 
@@ -120,6 +173,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def remove_participant(self, request, conversation_id=None):
         """
         Remove a participant from an existing conversation.
+        Users can remove themselves or participants can remove others.
         """
         conversation = self.get_object()
         user_id = request.data.get('user_id')
@@ -132,17 +186,24 @@ class ConversationViewSet(viewsets.ModelViewSet):
         
         try:
             user = User.objects.get(user_id=user_id)
-            if conversation.participants.filter(user_id=user_id).exists():
-                conversation.participants.remove(user)
-                return Response(
-                    {'message': f'User {user.first_name} removed from conversation'}, 
-                    status=status.HTTP_200_OK
-                )
-            else:
+            if not conversation.participants.filter(user_id=user_id).exists():
                 return Response(
                     {'error': 'User is not a participant in this conversation'}, 
                     status=status.HTTP_400_BAD_REQUEST
                 )
+            
+            # Check if there will be at least one participant left
+            if conversation.participants.count() <= 1:
+                return Response(
+                    {'error': 'Cannot remove the last participant from conversation'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            conversation.participants.remove(user)
+            return Response(
+                {'message': f'User {user.first_name} removed from conversation'}, 
+                status=status.HTTP_200_OK
+            )
         except User.DoesNotExist:
             return Response(
                 {'error': 'User not found'}, 
@@ -153,6 +214,7 @@ class ConversationViewSet(viewsets.ModelViewSet):
     def messages(self, request, conversation_id=None):
         """
         Get all messages for a specific conversation.
+        Only participants can access messages.
         """
         conversation = self.get_object()
         messages = conversation.messages.all().order_by('sent_at')
@@ -163,9 +225,9 @@ class ConversationViewSet(viewsets.ModelViewSet):
 class MessageViewSet(viewsets.ModelViewSet):
     """
     ViewSet for managing messages.
-    Provides endpoints for listing, creating, and managing messages.
+    Users can only access messages from conversations they participate in.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, MessageOwnerPermission]
     lookup_field = 'message_id'
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['sent_at', 'conversation']
@@ -195,9 +257,20 @@ class MessageViewSet(viewsets.ModelViewSet):
         """
         Create a new message.
         Automatically sets the sender to the current user.
+        Validates that user is a participant in the conversation.
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        
+        # Get the conversation
+        conversation = serializer.validated_data.get('conversation')
+        
+        # Check if user is a participant in the conversation
+        if not conversation.participants.filter(user_id=request.user.user_id).exists():
+            return Response(
+                {'error': 'You are not a participant in this conversation'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
         
         # Set the sender to current user
         message = serializer.save(sender=request.user)
@@ -284,6 +357,20 @@ class MessageViewSet(viewsets.ModelViewSet):
             {'message': 'Message marked as read'}, 
             status=status.HTTP_200_OK
         )
+
+    def update(self, request, *args, **kwargs):
+        """
+        Update a message (only sender can update their own messages).
+        """
+        message = self.get_object()
+        
+        if message.sender != request.user:
+            return Response(
+                {'error': 'You can only update your own messages'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        return super().update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         """

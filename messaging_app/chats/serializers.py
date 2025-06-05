@@ -246,3 +246,93 @@ class MessageCreateSerializer(serializers.ModelSerializer):
                 )
         
         return data
+
+
+class UserRegistrationSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user registration with password confirmation.
+    """
+    password = serializers.CharField(write_only=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True)
+    
+    class Meta:
+        model = User
+        fields = [
+            'user_id', 
+            'username', 
+            'email', 
+            'first_name', 
+            'last_name', 
+            'phone_number', 
+            'password',
+            'password_confirm',
+            'created_at'
+        ]
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'password_confirm': {'write_only': True},
+            'user_id': {'read_only': True},
+            'created_at': {'read_only': True},
+        }
+
+    def validate(self, data):
+        """
+        Check that the two password entries match.
+        """
+        if data['password'] != data['password_confirm']:
+            raise serializers.ValidationError("Passwords don't match")
+        return data
+
+    def create(self, validated_data):
+        """
+        Create a new user with encrypted password.
+        """
+        validated_data.pop('password_confirm')  # Remove password_confirm
+        password = validated_data.pop('password')
+        user = User.objects.create_user(**validated_data)
+        user.set_password(password)
+        user.save()
+        return user
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """
+    Serializer for password change.
+    """
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, min_length=8)
+    new_password_confirm = serializers.CharField(required=True)
+
+    def validate(self, data):
+        """
+        Check that the two new password entries match.
+        """
+        if data['new_password'] != data['new_password_confirm']:
+            raise serializers.ValidationError("New passwords don't match")
+        return data
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    """
+    Serializer for user profile (read-only sensitive info).
+    """
+    class Meta:
+        model = User
+        fields = [
+            'user_id', 
+            'username', 
+            'email', 
+            'first_name', 
+            'last_name', 
+            'phone_number', 
+            'created_at',
+            'last_login',
+            'is_active'
+        ]
+        read_only_fields = [
+            'user_id', 
+            'username', 
+            'created_at',
+            'last_login',
+            'is_active'
+        ]
