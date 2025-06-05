@@ -19,5 +19,5 @@ class IsParticipantOfConversation(permissions.BasePermission):
         return False
 
     def has_permission(self, request, view):
-        # Only allow access if user is authenticated
+        # Only allow access if user is authenticated only
         return request.user and request.user.is_authenticated
