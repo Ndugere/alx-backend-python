@@ -184,7 +184,6 @@ staticfiles/
 static/
 media/
 *.log
-requests.log
 middleware.log
 
 # Local environment variables

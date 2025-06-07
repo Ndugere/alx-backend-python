@@ -1,63 +1,40 @@
-from datetime import datetime
-import logging
 import os
+from datetime import datetime
 from django.conf import settings
+from django.http import HttpResponseForbidden
 
-# Configure logging to write to requests.log file
-log_file_path = os.path.join(settings.BASE_DIR, 'requests.log')
-
-# Create a custom logger for request logging
-logger = logging.getLogger('request_logger')
-logger.setLevel(logging.INFO)
-
-# Create file handler if it doesn't exist
-if not logger.handlers:
-    file_handler = logging.FileHandler(log_file_path)
-    file_handler.setLevel(logging.INFO)
-    
-    # Create formatter - only log the message without extra formatting
-    formatter = logging.Formatter('%(message)s')
-    file_handler.setFormatter(formatter)
-    
-    # Add handler to logger
-    logger.addHandler(file_handler)
 
 class RequestLoggingMiddleware:
-    """
-    Basic middleware that logs each user's requests to a file.
-    Logs timestamp, user, and request path in the specified format.
-    """
-    
     def __init__(self, get_response):
-        """
-        Initialize the middleware with the get_response callable.
-        
-        Args:
-            get_response: The next middleware or view in the chain
-        """
         self.get_response = get_response
-    
+
     def __call__(self, request):
-        """
-        Process the request and log the information.
+        # Log the request
+        user = request.user if request.user.is_authenticated else "Anonymous"
+        log_entry = f"{datetime.now()} - User: {user} - Path: {request.path}\n"
         
-        Args:
-            request: The HTTP request object
-            
-        Returns:
-            HTTP response from the next middleware/view
-        """
-        # Get the user (handle both authenticated and anonymous users)
-        if hasattr(request, 'user') and request.user.is_authenticated:
-            user = request.user.username
-        else:
-            user = 'Anonymous'
+        log_file_path = os.path.join(settings.BASE_DIR, 'requests.log')
+        with open(log_file_path, 'a') as log_file:
+            log_file.write(log_entry)
         
-        # Log the request information in the exact specified format
-        log_message = f"{datetime.now()} - User: {user} - Path: {request.path}"
-        logger.info(log_message)
-        
-        # Call the next middleware or view
         response = self.get_response(request)
+        return response
+
+
+class RestrictAccessByTimeMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Check if the request is for chat-related URLs
+        if request.path.startswith('/chats/'):
+            current_hour = datetime.now().hour
+            
+            # Restrict access outside 9 AM (9) to 6 PM (18)
+            # The task says "outside 9PM and 6PM" but logically it should be 9AM to 6PM
+            # If you need 9PM to 6PM (overnight), use: if not (current_hour >= 21 or current_hour < 6):
+            if not (9 <= current_hour <= 18):
+                return HttpResponseForbidden("Access to chat is restricted outside business hours (9 AM - 6 PM).")
         
+        response = self.get_response(request)
         return response
