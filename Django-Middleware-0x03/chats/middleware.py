@@ -83,3 +83,16 @@ class OffensiveLanguageMiddleware:
         else:
             ip = request.META.get("REMOTE_ADDR")
         return ip
+
+
+class RolePermissionMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.user.is_authenticated:
+            user = request.user
+            if not (user.is_superuser or user.groups.filter(name__in=["admin", "moderator"]).exists()):
+                return HttpResponseForbidden("403 Forbidden: You do not have the required role to access this resource.")
+        
+        return self.get_response(request)
