@@ -1,7 +1,8 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from django.conf import settings
 from django.http import HttpResponseForbidden
+from collections import defaultdict
 
 
 class RequestLoggingMiddleware:
@@ -31,10 +32,53 @@ class RestrictAccessByTimeMiddleware:
             current_hour = datetime.now().hour
             
             # Restrict access outside 9 AM (9) to 6 PM (18)
-            # The task says "outside 9PM and 6PM" but logically it should be 9AM to 6PM
-            # If you need 9PM to 6PM (overnight), use: if not (current_hour >= 21 or current_hour < 6):
             if not (9 <= current_hour <= 18):
                 return HttpResponseForbidden("Access to chat is restricted outside business hours (9 AM - 6 PM).")
         
         response = self.get_response(request)
         return response
+
+
+class OffensiveLanguageMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+        # Dictionary to store IP addresses and their message timestamps
+        self.ip_message_tracker = defaultdict(list)
+        self.message_limit = 5  # 5 messages per minute
+        self.time_window = 60   # 60 seconds (1 minute)
+
+    def __call__(self, request):
+        # Only check POST requests to chat endpoints (when sending messages)
+        if request.method == 'POST' and request.path.startswith('/chats/'):
+            client_ip = self.get_client_ip(request)
+            current_time = datetime.now()
+            
+            # Clean old timestamps (older than 1 minute)
+            self.clean_old_timestamps(client_ip, current_time)
+            
+            # Check if user has exceeded the limit
+            if len(self.ip_message_tracker[client_ip]) >= self.message_limit:
+                return HttpResponseForbidden("Rate limit exceeded. You can only send 5 messages per minute.")
+            
+            # Add current timestamp to the tracker
+            self.ip_message_tracker[client_ip].append(current_time)
+        
+        response = self.get_response(request)
+        return response
+    
+    def get_client_ip(self, request):
+        """Get the client's IP address"""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            ip = x_forwarded_for.split(',')[0]
+        else:
+            ip = request.META.get('REMOTE_ADDR')
+        return ip
+    
+    def clean_old_timestamps(self, ip, current_time):
+        """Remove timestamps older than the time window"""
+        cutoff_time = current_time - timedelta(seconds=self.time_window)
+        self.ip_message_tracker[ip] = [
+            timestamp for timestamp in self.ip_message_tracker[ip] 
+            if timestamp > cutoff_time
+        ]
