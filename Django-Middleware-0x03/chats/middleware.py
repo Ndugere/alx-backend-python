@@ -85,7 +85,7 @@ class OffensiveLanguageMiddleware:
         return ip
 
 
-class RolePermissionsMiddleware:
+class RolepermissionsMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
 
