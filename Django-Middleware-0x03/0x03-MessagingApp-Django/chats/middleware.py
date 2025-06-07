@@ -82,3 +82,34 @@ class OffensiveLanguageMiddleware:
             timestamp for timestamp in self.ip_message_tracker[ip] 
             if timestamp > cutoff_time
         ]
+
+
+class RolepermissionMiddleware:
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Check if the request is for chat-related URLs that require admin/moderator access
+        if request.path.startswith('/chats/'):
+            # Check if user is authenticated
+            if not request.user.is_authenticated:
+                return HttpResponseForbidden("Authentication required.")
+            
+            # Check if user has admin or moderator role
+            if not self.has_admin_or_moderator_role(request.user):
+                return HttpResponseForbidden("Access denied. Admin or moderator role required.")
+        
+        response = self.get_response(request)
+        return response
+    
+    def has_admin_or_moderator_role(self, user):
+        """Check if user has admin or moderator role"""
+        # Check if user is Django superuser (admin)
+        if user.is_superuser or user.is_staff:
+            return True
+        
+        # Check if user has admin or moderator role through groups
+        user_groups = user.groups.values_list('name', flat=True)
+        allowed_roles = ['admin', 'moderator', 'Admin', 'Moderator']
+        
+        return any(role in user_groups for role in allowed_roles)
