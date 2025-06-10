@@ -1,9 +1,12 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.contrib.auth import logout
 from django.contrib import messages
 from django.http import JsonResponse
 from django.core.paginator import Paginator
+from django.db import transaction
+from django.urls import reverse
 from .models import Message, Notification, MessageHistory
 
 
@@ -88,6 +91,83 @@ def message_history(request, message_id):
         'message': message,
         'page_obj': page_obj
     })
+
+
+@login_required
+def delete_account(request):
+    """Delete user account and all related data"""
+    if request.method == 'POST':
+        confirmation = request.POST.get('confirmation')
+        password = request.POST.get('password')
+        
+        # Verify password
+        if not request.user.check_password(password):
+            messages.error(request, 'Invalid password. Account deletion cancelled.')
+            return render(request, 'messaging/delete_account.html')
+        
+        # Check confirmation
+        if confirmation != 'DELETE':
+            messages.error(request, 'Please type "DELETE" exactly to confirm account deletion.')
+            return render(request, 'messaging/delete_account.html')
+        
+        try:
+            with transaction.atomic():
+                # Get user data for logging
+                username = request.user.username
+                user_id = request.user.id
+                
+                # Count related data before deletion
+                sent_messages_count = Message.objects.filter(sender=request.user).count()
+                received_messages_count = Message.objects.filter(receiver=request.user).count()
+                notifications_count = Notification.objects.filter(user=request.user).count()
+                
+                # Store user instance
+                user_to_delete = request.user
+                
+                # Logout user before deletion
+                logout(request)
+                
+                # Delete the user (signals will handle cleanup)
+                user_to_delete.delete()
+                
+                messages.success(
+                    request, 
+                    f'Account "{username}" has been successfully deleted along with '
+                    f'{sent_messages_count} sent messages, {received_messages_count} received messages, '
+                    f'and {notifications_count} notifications.'
+                )
+                
+                return redirect('home')
+                
+        except Exception as e:
+            messages.error(request, f'Error deleting account: {str(e)}')
+            return render(request, 'messaging/delete_account.html')
+    
+    # GET request - show confirmation page
+    user_stats = {
+        'sent_messages': Message.objects.filter(sender=request.user).count(),
+        'received_messages': Message.objects.filter(receiver=request.user).count(),
+        'notifications': Notification.objects.filter(user=request.user).count(),
+        'message_edits': MessageHistory.objects.filter(edited_by=request.user).count(),
+    }
+    
+    return render(request, 'messaging/delete_account.html', {'user_stats': user_stats})
+
+
+@login_required
+def user_profile(request):
+    """View user profile and account information"""
+    user_stats = {
+        'sent_messages': Message.objects.filter(sender=request.user).count(),
+        'received_messages': Message.objects.filter(receiver=request.user).count(),
+        'unread_notifications': Notification.objects.filter(user=request.user, is_read=False).count(),
+        'total_notifications': Notification.objects.filter(user=request.user).count(),
+        'message_edits': MessageHistory.objects.filter(edited_by=request.user).count(),
+        'join_date': request.user.date_joined,
+        'last_login': request.user.last_login,
+    }
+    
+    return render(request, 'messaging/user_profile.html', {'user_stats': user_stats})
 
 
 @login_required
