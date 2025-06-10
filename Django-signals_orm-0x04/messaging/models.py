@@ -17,6 +17,8 @@ class Message(models.Model):
     content = models.TextField()
     timestamp = models.DateTimeField(default=timezone.now)
     is_read = models.BooleanField(default=False)
+    edited = models.BooleanField(default=False)  # NEW FIELD
+    last_edited = models.DateTimeField(null=True, blank=True)  # NEW FIELD
 
     class Meta:
         ordering = ['-timestamp']
@@ -24,13 +26,46 @@ class Message(models.Model):
         verbose_name_plural = 'Messages'
 
     def __str__(self):
-        return f"From {self.sender.username} to {self.receiver.username}: {self.content[:50]}..."
+        edit_status = " (Edited)" if self.edited else ""
+        return f"From {self.sender.username} to {self.receiver.username}: {self.content[:50]}...{edit_status}"
+
+    def mark_as_edited(self):
+        """Mark message as edited and update timestamp"""
+        self.edited = True
+        self.last_edited = timezone.now()
+        self.save()
+
+
+class MessageHistory(models.Model):
+    """Model to store message edit history"""
+    message = models.ForeignKey(
+        Message,
+        on_delete=models.CASCADE,
+        related_name='history'
+    )
+    old_content = models.TextField()
+    edited_by = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='message_edits'
+    )
+    edited_at = models.DateTimeField(default=timezone.now)
+    edit_reason = models.CharField(max_length=200, blank=True, null=True)
+
+    class Meta:
+        ordering = ['-edited_at']
+        verbose_name = 'Message History'
+        verbose_name_plural = 'Message Histories'
+
+    def __str__(self):
+        return f"Edit history for message {self.message.id} by {self.edited_by.username}"
 
 
 class Notification(models.Model):
     NOTIFICATION_TYPES = [
         ('message', 'New Message'),
         ('system', 'System Notification'),
+        ('edit', 'Message Edited'),  # NEW TYPE
     ]
 
     user = models.ForeignKey(
