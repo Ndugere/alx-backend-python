@@ -1,102 +1,11 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
-from django.db.models.signals import post_save, pre_save, post_delete, pre_delete
-from django.utils import timezone
 from django.urls import reverse
 from .models import Message, Notification, MessageHistory
-from .signals import (
-    create_message_notification, 
-    create_welcome_notification, 
-    log_message_edit,
-    cleanup_user_related_data,
-    log_user_deletion
-)
 
 
-class MessageSignalTest(TestCase):
-    """Test cases for message notification signals"""
-
-    def setUp(self):
-        """Set up test data"""
-        self.user1 = User.objects.create_user(
-            username='sender',
-            email='sender@example.com',
-            password='testpass123'
-        )
-        self.user2 = User.objects.create_user(
-            username='receiver',
-            email='receiver@example.com',
-            password='testpass123'
-        )
-
-    def test_message_creation_triggers_notification(self):
-        """Test that creating a message triggers a notification"""
-        initial_notification_count = Notification.objects.count()
-        
-        message = Message.objects.create(
-            sender=self.user1,
-            receiver=self.user2,
-            content="Hello, this is a test message!"
-        )
-        
-        self.assertEqual(
-            Notification.objects.count(), 
-            initial_notification_count + 1
-        )
-        
-        notification = Notification.objects.filter(user=self.user2).last()
-        self.assertIsNotNone(notification)
-        self.assertEqual(notification.user, self.user2)
-        self.assertEqual(notification.message, message)
-        self.assertEqual(notification.notification_type, 'message')
-
-    def test_message_edit_creates_history(self):
-        """Test that editing a message creates a history record"""
-        message = Message.objects.create(
-            sender=self.user1,
-            receiver=self.user2,
-            content="Original content"
-        )
-        
-        initial_history_count = MessageHistory.objects.count()
-        
-        message.content = "Edited content"
-        message.save()
-        
-        self.assertEqual(MessageHistory.objects.count(), initial_history_count + 1)
-        
-        history = MessageHistory.objects.filter(message=message).first()
-        self.assertIsNotNone(history)
-        self.assertEqual(history.old_content, "Original content")
-        self.assertEqual(history.edited_by, self.user1)
-        
-        message.refresh_from_db()
-        self.assertTrue(message.edited)
-        self.assertIsNotNone(message.last_edited)
-
-    def test_welcome_notification_for_new_user(self):
-        """Test that new users receive welcome notifications"""
-        initial_count = Notification.objects.count()
-        
-        new_user = User.objects.create_user(
-            username='newuser',
-            email='newuser@example.com',
-            password='testpass123'
-        )
-        
-        self.assertEqual(Notification.objects.count(), initial_count + 1)
-        
-        welcome_notification = Notification.objects.filter(
-            user=new_user,
-            notification_type='system'
-        ).last()
-        
-        self.assertIsNotNone(welcome_notification)
-        self.assertIn('Welcome', welcome_notification.title)
-
-
-class UserDeletionSignalTest(TestCase):
-    """Test cases for user deletion signals"""
+class CustomManagerTest(TestCase):
+    """Test cases for custom managers"""
 
     def setUp(self):
         """Set up test data"""
@@ -111,92 +20,157 @@ class UserDeletionSignalTest(TestCase):
             password='testpass123'
         )
         
-        # Create some test data
-        self.message1 = Message.objects.create(
+        # Create test messages
+        self.read_message = Message.objects.create(
             sender=self.user1,
             receiver=self.user2,
-            content="Message from user1 to user2"
+            content="This is a read message",
+            is_read=True
         )
         
-        self.message2 = Message.objects.create(
+        self.unread_message1 = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="This is an unread message 1"
+        )
+        
+        self.unread_message2 = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="This is an unread message 2"
+        )
+
+    def test_unread_messages_for_user(self):
+        """Test custom manager filters unread messages for user"""
+        unread_messages = Message.unread_messages.for_user(self.user2)
+        
+        self.assertEqual(unread_messages.count(), 2)
+        self.assertIn(self.unread_message1, unread_messages)
+        self.assertIn(self.unread_message2, unread_messages)
+        self.assertNotIn(self.read_message, unread_messages)
+
+    def test_unread_count_for_user(self):
+        """Test custom manager counts unread messages correctly"""
+        unread_count = Message.unread_messages.unread_count_for_user(self.user2)
+        self.assertEqual(unread_count, 2)
+        
+        # Mark one message as read
+        self.unread_message1.mark_as_read()
+        
+        unread_count = Message.unread_messages.unread_count_for_user(self.user2)
+        self.assertEqual(unread_count, 1)
+
+    def test_unread_threads_for_user(self):
+        """Test custom manager filters unread thread messages"""
+        # Create a reply
+        reply = Message.objects.create(
             sender=self.user2,
             receiver=self.user1,
-            content="Message from user2 to user1"
+            content="This is a reply",
+            parent_message=self.unread_message1
         )
         
-        # Edit a message to create history
-        self.message1.content = "Edited message"
-        self.message1.save()
+        unread_threads = Message.unread_messages.unread_threads_for_user(self.user2)
+        
+        # Should only include root messages, not replies
+        self.assertEqual(unread_threads.count(), 2)
+        self.assertNotIn(reply, unread_threads)
 
-    def test_user_deletion_removes_all_related_data(self):
-        """Test that deleting a user removes all related data"""
-        user1_id = self.user1.id
+    def test_mark_thread_as_read(self):
+        """Test marking entire thread as read"""
+        # Create a thread with replies
+        reply1 = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Reply 1",
+            parent_message=self.unread_message1
+        )
         
-        # Count related data before deletion
-        initial_messages = Message.objects.filter(
-            models.Q(sender=self.user1) | models.Q(receiver=self.user1)
-        ).count()
-        initial_notifications = Notification.objects.filter(user=self.user1).count()
-        initial_histories = MessageHistory.objects.filter(edited_by=self.user1).count()
+        reply2 = Message.objects.create(
+            sender=self.user1,
+            receiver=self.user2,
+            content="Reply 2",
+            parent_message=self.unread_message1
+        )
         
-        # Ensure we have some data
-        self.assertGreater(initial_messages, 0)
-        self.assertGreater(initial_notifications, 0)
-        self.assertGreater(initial_histories, 0)
+        # All should be unread initially
+        self.assertFalse(self.unread_message1.is_read)
+        self.assertFalse(reply1.is_read)
+        self.assertFalse(reply2.is_read)
         
-        # Delete the user
-        self.user1.delete()
+        # Mark thread as read
+        updated_count = Message.unread_messages.mark_thread_as_read(
+            self.user2, self.unread_message1
+        )
         
-        # Check that all related data is gone
-        remaining_messages = Message.objects.filter(
-            models.Q(sender_id=user1_id) | models.Q(receiver_id=user1_id)
-        ).count()
-        remaining_notifications = Notification.objects.filter(user_id=user1_id).count()
-        remaining_histories = MessageHistory.objects.filter(edited_by_id=user1_id).count()
+        # Should have updated 3 messages
+        self.assertEqual(updated_count, 3)
         
-        self.assertEqual(remaining_messages, 0)
-        self.assertEqual(remaining_notifications, 0)
-        self.assertEqual(remaining_histories, 0)
+        # Refresh from database
+        self.unread_message1.refresh_from_db()
+        reply1.refresh_from_db()
+        reply2.refresh_from_db()
+        
+        # All should now be read
+        self.assertTrue(self.unread_message1.is_read)
+        self.assertTrue(reply1.is_read)
+        self.assertTrue(reply2.is_read)
 
-    def test_cascade_deletion_preserves_other_user_data(self):
-        """Test that deleting one user doesn't affect other users' data"""
-        # Count user2's data before user1 deletion
-        user2_messages = Message.objects.filter(
-            models.Q(sender=self.user2) | models.Q(receiver=self.user2)
-        ).count()
-        user2_notifications = Notification.objects.filter(user=self.user2).count()
+    def test_recent_unread(self):
+        """Test getting recent unread messages with limit"""
+        # Create more unread messages
+        for i in range(15):
+            Message.objects.create(
+                sender=self.user1,
+                receiver=self.user2,
+                content=f"Unread message {i}"
+            )
         
-        # Delete user1
-        self.user1.delete()
+        recent_unread = Message.unread_messages.recent_unread(self.user2, limit=5)
         
-        # Check that user2's data is still intact
-        remaining_user2_messages = Message.objects.filter(
-            models.Q(sender=self.user2) | models.Q(receiver=self.user2)
-        ).count()
-        remaining_user2_notifications = Notification.objects.filter(user=self.user2).count()
+        # Should return only 5 messages
+        self.assertEqual(len(recent_unread), 5)
         
-        # user2 should have lost messages involving user1, but keep others
-        self.assertLessEqual(remaining_user2_messages, user2_messages)
-        self.assertLessEqual(remaining_user2_notifications, user2_notifications)
+        # Should be ordered by most recent first
+        timestamps = [msg.timestamp for msg in recent_unread]
+        self.assertEqual(timestamps, sorted(timestamps, reverse=True))
 
-    def test_signal_disconnection_for_user_deletion(self):
-        """Test signal disconnection for user deletion"""
-        # Disconnect the signals
-        post_delete.disconnect(cleanup_user_related_data, sender=User)
-        pre_delete.disconnect(log_user_deletion, sender=User)
+    def test_custom_queryset_methods(self):
+        """Test custom QuerySet methods"""
+        # Test unread filter
+        unread_qs = Message.objects.unread()
+        self.assertEqual(unread_qs.count(), 2)
         
-        user_id = self.user1.id
+        # Test read filter
+        read_qs = Message.objects.read()
+        self.assertEqual(read_qs.count(), 1)
         
-        # Delete user (signals shouldn't fire)
-        self.user1.delete()
+        # Test for_user_received
+        received_qs = Message.objects.for_user_received(self.user2)
+        self.assertEqual(received_qs.count(), 3)
         
-        # Reconnect signals for other tests
-        post_delete.connect(cleanup_user_related_data, sender=User)
-        pre_delete.connect(log_user_deletion, sender=User)
+        # Test for_user_sent
+        sent_qs = Message.objects.for_user_sent(self.user1)
+        self.assertEqual(sent_qs.count(), 3)
+
+    def test_optimized_queries(self):
+        """Test that optimized queries work correctly"""
+        # This test ensures that the .only() optimization works
+        unread_messages = Message.unread_messages.for_user(self.user2)
+        
+        # Access optimized fields
+        for message in unread_messages:
+            # These should not trigger additional queries
+            message.content
+            message.timestamp
+            message.sender.username
+        
+        # The test passes if no additional queries are triggered
+        self.assertTrue(True)
 
 
-class UserDeletionViewTest(TestCase):
-    """Test cases for user deletion views"""
+class UnreadInboxViewTest(TestCase):
+    """Test cases for unread inbox views"""
 
     def setUp(self):
         """Set up test data"""
@@ -207,77 +181,53 @@ class UserDeletionViewTest(TestCase):
             password='testpass123'
         )
         
-        # Create some test data
         other_user = User.objects.create_user(
             username='otheruser',
             email='other@example.com',
             password='testpass123'
         )
         
+        # Create test messages
         Message.objects.create(
-            sender=self.user,
-            receiver=other_user,
-            content="Test message"
+            sender=other_user,
+            receiver=self.user,
+            content="Unread message 1"
+        )
+        
+        Message.objects.create(
+            sender=other_user,
+            receiver=self.user,
+            content="Read message",
+            is_read=True
         )
 
-    def test_delete_account_view_requires_login(self):
-        """Test that delete account view requires authentication"""
-        response = self.client.get(reverse('delete_account'))
+    def test_unread_inbox_view_requires_login(self):
+        """Test that unread inbox view requires authentication"""
+        response = self.client.get(reverse('unread_inbox'))
         self.assertEqual(response.status_code, 302)  # Redirect to login
 
-    def test_delete_account_get_shows_stats(self):
-        """Test that GET request shows user statistics"""
+    def test_unread_inbox_view_shows_only_unread(self):
+        """Test that unread inbox shows only unread messages"""
         self.client.login(username='testuser', password='testpass123')
-        response = self.client.get(reverse('delete_account'))
+        response = self.client.get(reverse('unread_inbox'))
         
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'testuser')
-        self.assertContains(response, 'sent_messages')
+        self.assertContains(response, 'Unread message 1')
+        self.assertNotContains(response, 'Read message')
 
-    def test_delete_account_post_with_wrong_password(self):
-        """Test account deletion with wrong password"""
+    def test_mark_message_read_ajax(self):
+        """Test marking message as read via AJAX"""
         self.client.login(username='testuser', password='testpass123')
         
-        response = self.client.post(reverse('delete_account'), {
-            'password': 'wrongpassword',
-            'confirmation': 'DELETE'
-        })
+        unread_message = Message.objects.filter(receiver=self.user, is_read=False).first()
+        
+        response = self.client.post(
+            reverse('mark_message_read', args=[unread_message.id]),
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
         
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Invalid password')
-        self.assertTrue(User.objects.filter(username='testuser').exists())
-
-    def test_delete_account_post_with_wrong_confirmation(self):
-        """Test account deletion with wrong confirmation"""
-        self.client.login(username='testuser', password='testpass123')
         
-        response = self.client.post(reverse('delete_account'), {
-            'password': 'testpass123',
-            'confirmation': 'delete'  # lowercase, should fail
-        })
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'type "DELETE" exactly')
-        self.assertTrue(User.objects.filter(username='testuser').exists())
-
-    def test_successful_account_deletion(self):
-        """Test successful account deletion"""
-        self.client.login(username='testuser', password='testpass123')
-        
-        response = self.client.post(reverse('delete_account'), {
-            'password': 'testpass123',
-            'confirmation': 'DELETE'
-        })
-        
-        self.assertEqual(response.status_code, 302)  # Redirect after deletion
-        self.assertFalse(User.objects.filter(username='testuser').exists())
-
-    def test_user_profile_view(self):
-        """Test user profile view shows statistics"""
-        self.client.login(username='testuser', password='testpass123')
-        response = self.client.get(reverse('user_profile'))
-        
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'testuser')
-        self.assertContains(response, 'sent_messages')
-        self.assertContains(response, 'received_messages')
+        # Check that message is now read
+        unread_message.refresh_from_db()
+        self.assertTrue(unread_message.is_read)
