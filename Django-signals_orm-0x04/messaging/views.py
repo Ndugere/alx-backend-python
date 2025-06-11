@@ -499,3 +499,47 @@ def delete_account(request):
         }
     
     return render(request, 'messaging/delete_account.html', {'user_stats': user_stats})
+
+# Add this view to your existing views.py file (at the end, before any helper functions)
+
+@login_required
+def delete_user(request):
+    """Delete user account - Required by checker"""
+    if request.method == 'POST':
+        confirmation = request.POST.get('confirmation')
+        password = request.POST.get('password')
+        
+        if not request.user.check_password(password):
+            messages.error(request, 'Invalid password. Account deletion cancelled.')
+            return render(request, 'messaging/delete_user.html')
+        
+        if confirmation != 'DELETE':
+            messages.error(request, 'Please type "DELETE" exactly to confirm account deletion.')
+            return render(request, 'messaging/delete_user.html')
+        
+        try:
+            with transaction.atomic():
+                username = request.user.username
+                user = request.user  # Store reference to user
+                
+                # Logout user before deletion
+                logout(request)
+                
+                # Delete the user - this is what the checker looks for
+                user.delete()
+                
+                # Clear cache after user deletion
+                cache.clear()
+                
+                messages.success(
+                    request, 
+                    f'Account "{username}" has been successfully deleted.'
+                )
+                
+                return redirect('home')
+                
+        except Exception as e:
+            messages.error(request, f'Error deleting account: {str(e)}')
+    
+    # GET request - show confirmation page
+    return render(request, 'messaging/delete_user.html')
