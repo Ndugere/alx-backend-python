@@ -8,11 +8,11 @@ from mysql.connector import Error
 
 def stream_users():
     """
-    Generator function that fetches rows one by one from the user_data table.
+    Generator function that fetches rows ony by one from user_data table
     Yields each row as a dictionary with the user's information.
     
     Returns:
-        Generator yielding dictionaries with user data:
+        Generator yielding dictionaries with the user data:
         {
             'user_id': str,
             'name': str,
@@ -20,43 +20,61 @@ def stream_users():
             'age': int
         }
     """
+    connection = connect_to_prodev()
+    if connection:
+        cursor = connection.cursor(dictionary=True)
+
+        # SQL query to fetch all users
+        sql_query = """
+            SELECT *
+            FROM user_data;
+        """
+
+        cursor.execute(sql_query)
+
+        for row in cursor:
+            yield {
+                'user_id': row['user_id'],
+                'name': row['name'],
+                'email': row['email'],
+                'age': row['age']
+            }
+
+        # Close the cursor and the connection
+        cursor.close()
+        connection.close()
+
+
+def connect_to_prodev():
+    """
+    Connects to the ALX_prodev database in MySQL.
+    
+    Returns:
+        connection: MySQL connection object to ALX_prodev if successfully, None otherwise
+    """
     try:
-        # Connect to the database
         connection = mysql.connector.connect(
             host="localhost",
             user="root",
-            password="root",  # Replace with your actual MySQL password
-            database="ALX_prodev"
+            password="root",
+            database="ALX_prodev",
         )
-        
-        if connection.is_connected():
-            cursor = connection.cursor(dictionary=True)
-            
-            # Execute query to fetch all users
-            cursor.execute("SELECT * FROM user_data")
-            
-            # Yield each row one by one
-            for row in cursor:
-                yield {
-                    'user_id': row['user_id'],
-                    'name': row['name'],
-                    'email': row['email'],
-                    'age': row['age']
-                }
-            
-            # Close the cursor and connection
-            cursor.close()
-            connection.close()
     
+        if connection.is_connected():
+            return connection
     except Error as e:
-        print(f"Error connecting to MySQL database: {e}")
-        yield None  # Yield None in case of error to avoid breaking the generator
+        print(f"Error connecting to ALX_prodev: {e}")
+
+
+def main():
+    for user in stream_users():
+        print(user)
 
 
 if __name__ == "__main__":
-    # Test the generator
-    for i, user in enumerate(stream_users()):
-        print(user)
-        # Print only first 5 users for testing
-        if i >= 4:
-            break
+    main()
+
+
+# Make the module callable for the test code (1-main.py)
+import sys
+sys.modules[__name__] = stream_users
