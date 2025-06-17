@@ -9,61 +9,83 @@ from mysql.connector import Error
 
 def stream_user_ages():
     """
-    Generator function that yields user ages one by one from the database.
-    Uses yield to provide ages without loading all data into memory at once.
+    Generator that yields user ages one by one from database.
+    Memory-efficient - doesn't load all ages at once.
     
     Yields:
-        int: Age of each user, one at a time
+        int: Individual user age
     """
-    try:
-        # Import the seed module for database connection
-        seed = __import__('seed')
-        
-        # Connect to the database
-        connection = seed.connect_to_prodev()
-        
-        if connection:
-            cursor = connection.cursor()
-            
-            # Execute query to fetch only the age column
-            cursor.execute("SELECT age FROM user_data")
-            
-            # Yield each age one by one
-            for (age,) in cursor:
-                yield age
-            
-            # Close resources
-            cursor.close()
-            connection.close()
+    connection = connect_to_prodev()
+    if not connection:
+        return
     
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        # SQL query to fetch batch_size rows starting from offset position
+        sql_query = "SELECT age FROM user_data"
+
+        cursor.execute(sql_query)
+
+        for row in cursor:
+            yield row['age']
+
     except Error as e:
-        print(f"Error streaming ages: {e}")
+        print(f"Error streaming user ages: {e}")
+        return
+    finally:
+        # Clean up ressources
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
 
 
 def calculate_average_age():
     """
-    Calculates the average age of users using the stream_user_ages generator.
-    Memory-efficient as it only holds running total and count, not all ages.
+    Calculate average age using the stream_user_ages generator.
+    Memory-efficient - processes ages one by one without loading all into memory.
     
     Returns:
-        float: The average age of all users
+        float: Average age of all users
     """
     total_age = 0
     count = 0
-    
-    # Use the generator to stream ages one by one
+
     for age in stream_user_ages():
         total_age += age
         count += 1
-    
-    # Calculate average (avoid division by zero)
-    if count > 0:
-        return total_age / count
-    else:
+
+    if count == 0:
         return 0
+    
+    return total_age / count
+
+
+def connect_to_prodev():
+    """
+    Connects to the ALX_prodev database in MySQL.
+
+    Returns:
+        connection: MySQL connection object to ALX_prodev if successfully, None otherwise
+    """
+    try:
+        connection = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="root",
+            database="ALX_prodev",
+        )
+
+        if connection.is_connected():
+            return connection
+    except Error as e:
+        print(f"Error connecting to ALX_prodev: {e}")
+
+
+def main():
+    calculate_average_age()
 
 
 if __name__ == "__main__":
-    # Calculate and print the average age
-    avg_age = calculate_average_age()
-    print(f"Average age of users: {avg_age:.2f}")
+    main()
