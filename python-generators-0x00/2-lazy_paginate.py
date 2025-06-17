@@ -9,79 +9,92 @@ from mysql.connector import Error
 
 def paginate_users(page_size, offset):
     """
-    Function to fetch paginated user data from the database.
+    Fetches one page of users from database.
     
     Args:
-        page_size (int): Number of records per page
-        offset (int): Starting position for fetching records
+        page_size (int): Number of users to fetch
+        offset (int): Starting position in database
         
     Returns:
-        list: A list of user dictionaries for the requested page
+        list: List of user dictionaries for this page
     """
-    try:
-        # Import the seed module for database connection
-        seed = __import__('seed')
-        
-        # Connect to the database
-        connection = seed.connect_to_prodev()
-        
-        if connection:
-            cursor = connection.cursor(dictionary=True)
-            
-            # Execute query with pagination
-            cursor.execute(f"SELECT * FROM user_data LIMIT {page_size} OFFSET {offset}")
-            
-            # Fetch all rows for this page
-            rows = cursor.fetchall()
-            
-            # Close resources
-            cursor.close()
-            connection.close()
-            
-            return rows
-            
-    except Error as e:
-        print(f"Error fetching paginated data: {e}")
+    connection = connect_to_prodev()
+    if not connection:
         return []
+    
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        # SQL query to fetch page_size rows starting from offset position
+        sql_query = "SELECT * FROM user_data LIMIT %s OFFSET %s"
+
+        cursor.execute(sql_query, (page_size, offset))
+
+        # Fetch all rows for current page as list of dictionaries
+        page = cursor.fetchall()
+
+        return page
+
+    except Error as e:
+        print(f"Error paginating users: {e}")
+        return []
+    finally:
+        # Clean up ressources
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()
 
 
 def lazy_pagination(page_size):
     """
-    Generator function that implements lazy loading of paginated data.
-    Uses yield to return each page only when needed.
+    Generator that yields pages of users one by one.
+    Only fetches next page when needed (lazy loading).
     
     Args:
-        page_size (int): Number of records per page
+        page_size (int): Number of users per page
         
     Yields:
-        list: A page of user data (list of dictionaries)
+        list: List of user dictionaries for each page
     """
-    # Initialize offset at 0
     offset = 0
-    
-    # Keep fetching pages until we get an empty page
     while True:
-        # Fetch the current page using paginate_users
-        current_page = paginate_users(page_size, offset)
-        
-        # If the page is empty, we've reached the end of the data
-        if not current_page:
+        page = paginate_users(page_size, offset)
+
+        if not page:
             break
-        
-        # Yield the current page (using yield keyword, not return)
-        yield current_page
-        
-        # Update offset for the next page
+
+        yield page
+
         offset += page_size
 
 
-if __name__ == "__main__":
-    # Test the lazy pagination
-    for i, page in enumerate(lazy_pagination(10)):
-        print(f"Page {i+1}:")
+def connect_to_prodev():
+    """
+    Connects to the ALX_prodev database in MySQL.
+
+    Returns:
+        connection: MySQL connection object to ALX_prodev if successfully, None otherwise
+    """
+    try:
+        connection = mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="root",
+            database="ALX_prodev",
+        )
+
+        if connection.is_connected():
+            return connection
+    except Error as e:
+        print(f"Error connecting to ALX_prodev: {e}")
+
+
+def main():
+    for page in lazy_pagination(100):
         for user in page:
-            print(f"  {user['name']} ({user['email']})")
-        
-        # Only show first 3 pages for testing
-        if i >= 2:
-            break
+            print(user)
+
+
+if __name__ == "__main__":
+    main()
