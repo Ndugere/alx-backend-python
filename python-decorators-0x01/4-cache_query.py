@@ -1,63 +1,60 @@
+#!/usr/bin/python3
+"""
+Cache Query Decorator
+"""
 import time
-import sqlite3
+import sqlite3 
 import functools
+import inspect
 
-# Global cache dictionary
+
 query_cache = {}
 
+
 def with_db_connection(func):
-    """
-    Decorator that automatically handles database connection.
-    Opens a connection before the function executes and closes it after.
-    """
+    """Decorator that automatically handles database connections."""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        # Open database connection
         conn = sqlite3.connect('users.db')
-        
         try:
-            # Call the original function with the connection as first argument
-            result = func(conn, *args, **kwargs)
-            return result
+            return func(conn, *args, **kwargs)
         finally:
-            # Always close the connection, even if an error occurs
             conn.close()
     
     return wrapper
 
+
 def cache_query(func):
-    """
-    Decorator that caches query results based on the SQL query string.
-    Avoids redundant database calls by returning cached results.
-    """
+    """"""
     @functools.wraps(func)
-    def wrapper(conn, *args, **kwargs):
-        # Extract the query from arguments
-        query = None
-        
-        # Check if query is in args
-        if args:
-            query = args[0]
-        # Check if query is in kwargs
-        elif 'query' in kwargs:
-            query = kwargs['query']
-        
-        # If query is found and already cached, return cached result
-        if query and query in query_cache:
-            print(f"Using cached result for query: {query}")
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+
+        # Get function signature
+        sig = inspect.signature(func)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+
+        query = bound.arguments.get("query")
+
+        if query_cache.get(query):
+            end_time = time.time()
+            execution_time = (end_time - start_time) * 1000 # Convert to milliseconds
+            print(f"Cache hit for query: {query}")
+            print(f"Execution time: {execution_time:.2f}ms (from cache)")
             return query_cache[query]
         
-        # Execute the function to get fresh results
-        print(f"Executing query and caching result: {query}")
-        result = func(conn, *args, **kwargs)
-        
-        # Cache the result if we have a query
-        if query:
-            query_cache[query] = result
-        
+        result = func(*args, **kwargs)
+        query_cache[query] = result
+
+        end_time = time.time()
+        execution_time = (end_time - start_time) * 1000  # Convert to milliseconds
+        print(f"Execution time: {execution_time:.2f}ms (from database)")
+
         return result
     
     return wrapper
+
 
 @with_db_connection
 @cache_query
@@ -68,8 +65,8 @@ def fetch_users_with_cache(conn, query):
 
 #### First call will cache the result
 users = fetch_users_with_cache(query="SELECT * FROM users")
-print("First call result:", users)
+print(users)
 
 #### Second call will use the cached result
 users_again = fetch_users_with_cache(query="SELECT * FROM users")
-print("Second call result:", users_again)
+print(users)
