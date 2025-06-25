@@ -27,8 +27,8 @@ spec:
     spec:
       containers:
       - name: django-app
-        # Blue version - current stable release
-        image: django-messaging-app:v1.0
+        # Blue version - updated to v2.0 for rolling update
+        image: django-messaging-app:v2.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
@@ -46,7 +46,7 @@ spec:
         - name: DATABASE_NAME
           value: "/app/db.sqlite3"
         - name: VERSION
-          value: "blue-v1.0"
+          value: "blue-v2.0"
         - name: DEPLOYMENT_COLOR
           value: "blue"
         
