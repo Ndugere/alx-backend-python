@@ -1,89 +1,112 @@
+#!/usr/bin/python3
+"""
+Reusable Query Context Manager
+
+A class-based context manager for executing database queries with
+automatic connection and query execution management.
+"""
+
 import sqlite3
+from typing import Optional, Any, List
 
 
 class ExecuteQuery:
     """
     A reusable context manager for executing database queries.
-    Manages both connection and query execution with parameters.
+    
+    Handles database connection, query execution, and resource cleanup
+    automatically while returning query results.
     """
     
-    def __init__(self, db_name, query, params=None):
+    def __init__(self, db_path: str, query: str, *params: Any):
         """
-        Initialize the context manager with database name, query, and parameters.
+        Initialize the query execution context manager.
         
         Args:
-            db_name: Name of the database file
+            db_path: Path to the database file
             query: SQL query to execute
-            params: Parameters for the query (optional)
+            *params: Parameters for the SQL query
         """
-        self.db_name = db_name
+        self.db_path = db_path
         self.query = query
-        self.params = params if params is not None else ()
-        self.connection = None
-        self.cursor = None
-        self.results = None
-    
-    def __enter__(self):
+        self.params = params
+        self.connection: Optional[sqlite3.Connection] = None
+        self.cursor: Optional[sqlite3.Cursor] = None
+        self.results: List[Any] = []
+
+    def __enter__(self) -> List[Any]:
         """
-        Enter the context manager - open connection and execute query.
+        Enter the context manager, establish connection and execute query.
         
         Returns:
-            results: The results of the query execution
+            List[Any]: Results of the executed query
+            
+        Raises:
+            sqlite3.Error: If database connection or query execution fails
         """
-        # Open database connection
-        self.connection = sqlite3.connect(self.db_name)
-        self.cursor = self.connection.cursor()
-        
-        # Execute the query with parameters
-        if isinstance(self.params, (list, tuple)):
-            self.cursor.execute(self.query, self.params)
-        else:
-            self.cursor.execute(self.query, (self.params,))
-        
-        # Fetch all results
-        self.results = self.cursor.fetchall()
-        
-        return self.results
-    
-    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            print(f"Opening connection to {self.db_path}")
+            self.connection = sqlite3.connect(self.db_path)
+            self.cursor = self.connection.cursor()
+
+            print(f"Executing query: {self.query}")
+            if self.params:
+                print(f"With parameters: {self.params}")
+                self.cursor.execute(self.query, self.params)
+            else:
+                self.cursor.execute(self.query)
+
+            self.results = self.cursor.fetchall()
+            print(f"Query executed successfully, {len(self.results)} rows returned")
+
+            return self.results
+        except sqlite3.Error as e:
+            print(f"Database error: {e}")
+            raise
+
+    def __exit__(self, 
+                 exc_type: Optional[type], 
+                 exc_val: Optional[Exception], 
+                 exc_tb: Optional[object]
+            ) -> bool:
         """
-        Exit the context manager - close cursor and connection.
+        Exit the context manager and cleanup resources.
         
         Args:
-            exc_type: Exception type (if any)
-            exc_value: Exception value (if any)
-            traceback: Exception traceback (if any)
-        
+            exc_type: Exception type if an exception occurred
+            exc_val: Exception value if an exception occurred  
+            exc_tb: Exception traceback if an exception occurred
+            
         Returns:
-            False: Propagate any exception that occurred
+            bool: False to propagate exceptions
         """
-        # Close cursor if it exists
-        if self.cursor:
-            self.cursor.close()
-        
-        # Close connection if it exists
-        if self.connection:
-            self.connection.close()
-        
-        # Return False to propagate any exception
-        return False
+        try:
+            if self.cursor:
+                self.cursor.close()
 
+            if self.connection:
+                if exc_type is None:
+                    self.connection.commit()
+                    print("Transaction committed successfully")
+                else:
+                    self.connection.rollback()
+                    print("Transaction rolled back due to error")
+                
+                self.connection.close()
+                print(f"Connection to {self.db_path} closed")
 
-# Using the context manager to execute a query with parameters
-query = "SELECT * FROM users WHERE age > ?"
-param = 25
+        except sqlite3.Error as e:
+            print(f"Error during cleanup: {e}")
 
-with ExecuteQuery('users.db', query, param) as results:
-    print(f"Users older than {param}:")
-    for user in results:
-        print(f"  ID: {user[0]}, Name: {user[1]}, Age: {user[2]}")
+        return False  # Propagate any exceptions
+    
 
-# Example of using with multiple parameters
-print("\nExample with multiple parameters:")
-query2 = "SELECT * FROM users WHERE age > ? AND city = ?"
-params2 = (20, 'New York')
+if __name__ == "__main__":
+    with ExecuteQuery("users.db", "SELECT * FROM users WHERE age > ?", 25) as results:
+        print("\nQuery Results:")
 
-with ExecuteQuery('users.db', query2, params2) as results:
-    print(f"Users older than {params2[0]} from {params2[1]}:")
-    for user in results:
-        print(f"  {user}")
+        if results:
+            for row in results:
+                print(row)
+        else:
+            print("No users found matching the criteria")
